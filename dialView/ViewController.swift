@@ -45,6 +45,7 @@ class ViewController: UIViewController {
         let v = UILabel(frame: CGRectMake(0, 0, DialView.CELL_WIDTH, DialView.CELL_WIDTH))
         v.backgroundColor = UIColor.redColor()
         v.text = "\(currentIndex)"
+        v.textAlignment = .Center
         currentIndex += 1
         return v
     }

@@ -8,13 +8,14 @@
 
 import UIKit
 
-// TODO: 慣性の計算
 class DialView: UIView {
     
     static let CELL_WIDTH: CGFloat = 40.0
     
     private var cellViews = [UIView]()
     private var preTouchDeg: Double? = nil
+    private var velocity: CGFloat = 0.0
+    private var brakeTimer: NSTimer? = nil
     private var _rotationOffset: CGFloat = 0.0 {
         didSet {
             reLayoutCellViews(0.1)
@@ -25,14 +26,7 @@ class DialView: UIView {
             return self._rotationOffset
         }
         set {
-            var tmp = newValue
-            while tmp > CGFloat(M_PI) {
-                tmp -= CGFloat(2*M_PI)
-            }
-            while tmp < CGFloat(-M_PI) {
-                tmp += CGFloat(2*M_PI)
-            }
-            self._rotationOffset = tmp
+            self._rotationOffset = CGFloat(DialView.normalizeDegree(Double(newValue)))
         }
     }
     
@@ -61,6 +55,11 @@ class DialView: UIView {
         
         let deg = atan(-Double((touchPos.y - center.y) / (touchPos.x - center.x)))
         preTouchDeg = deg
+        
+        if brakeTimer?.valid ?? false {
+            brakeTimer!.invalidate()
+        }
+        velocity = 0
     }
     
     override func touchesMoved(touches: Set<UITouch>, withEvent event: UIEvent?) {
@@ -68,15 +67,20 @@ class DialView: UIView {
         
         let touchPos = touches.first!.locationInView(self)
         let center = CGPoint(x: self.bounds.width / 2, y: self.bounds.height / 2)
-        let deg = atan(-Double((touchPos.y - center.y) / (touchPos.x - center.x)))
+        
+        let diffX = touchPos.x - center.x
+        let diffY = touchPos.y - center.y
+        let degTan = -Double(diffY / diffX)
+        let deg = atan(diffX == 0 ? Double.infinity : degTan)
         
         if let preDeg = preTouchDeg {
-            let d = deg-preDeg
+            let d = deg - preDeg
             if abs(d) < (M_PI/2) {
-                rotationOffset += CGFloat(d)
+                velocity = CGFloat(d)
             } else {
-                rotationOffset -= CGFloat(M_PI - d)
+                velocity = -CGFloat(M_PI - d)
             }
+            rotationOffset += velocity
         }
         preTouchDeg = deg
     }
@@ -84,6 +88,35 @@ class DialView: UIView {
     override func touchesEnded(touches: Set<UITouch>, withEvent event: UIEvent?) {
         super.touchesEnded(touches, withEvent: event)
         preTouchDeg = nil
+        if brakeTimer?.valid ?? false {
+            brakeTimer!.invalidate()
+        }
+        brakeTimer = NSTimer.scheduledTimerWithTimeInterval(0.1, target: self, selector: #selector(self.onBrakeTimerUpdated) , userInfo: nil, repeats: true)
+    }
+    
+    func onBrakeTimerUpdated() {
+        velocity = max(-1.3, min(1.3, velocity))
+        
+        print(velocity)
+        rotationOffset += velocity
+
+        velocity -= velocity > 0 ? 0.03 : -0.03
+        
+        if abs(velocity) <= 0.03 {
+            velocity = 0
+            brakeTimer?.invalidate()
+        }
+    }
+    
+    static func normalizeDegree(deg: Double) -> Double {
+        var tmp = deg
+        while tmp > M_PI {
+            tmp -= 2*M_PI
+        }
+        while tmp < -M_PI {
+            tmp += 2*M_PI
+        }
+        return tmp
     }
     
     private func reLayoutCellViews(duration: Double) {
@@ -111,13 +144,13 @@ class DialView: UIView {
         }
     }
     
-    func scrollTo(index: Int) {
+    func rotationOffsetAtIndex(index: Int) -> Double {
         let cellViewsCount = cellViews.count
-        guard index >= 0 && index < cellViewsCount else {
-            return
-        }
-        
-        rotationOffset = CGFloat(-2 * M_PI * Double(index) / Double(cellViewsCount) + M_PI / 2)
+        return -2 * M_PI * Double(index % cellViewsCount) / Double(cellViewsCount) + M_PI / 2
+    }
+    
+    func scrollTo(index: Int) {
+        rotationOffset = CGFloat(rotationOffsetAtIndex(index))
     }
     
     func addCellView(view: UIView) {
