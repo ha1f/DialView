@@ -28,7 +28,7 @@ class ViewController: UIViewController {
         dialView.backgroundColor = UIColor.lightGrayColor()
         self.view.addSubview(dialView)
         
-        (0...10).map{_ in buildCell()}.forEach{dialView.addCellView($0)}
+        (0...5).map{ _ in buildCell() }.forEach{ dialView.addCellView($0) }
         
         addButton.frame = CGRectMake(0, 0, 100, 40)
         addButton.backgroundColor = UIColor.blueColor()

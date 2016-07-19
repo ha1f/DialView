@@ -8,9 +8,29 @@
 
 import UIKit
 
+class Util {
+    static func restrictedValue<T: Comparable>(value: T, min minimum : T, max maximum: T) -> T {
+        return max(minimum, min(maximum, value))
+    }
+    
+    static func normalizeDegree(deg: Double) -> Double {
+        var tmp = deg
+        while tmp > M_PI {
+            tmp -= 2*M_PI
+        }
+        while tmp < -M_PI {
+            tmp += 2*M_PI
+        }
+        return tmp
+    }
+}
+
 class DialView: UIView {
     
     static let CELL_WIDTH: CGFloat = 40.0
+    static let MAX_SPEED: CGFloat = 0.8
+    static let BRAKE_POWER: CGFloat = 0.01
+    static let BRAKE_TIMER_INTERVAL: NSTimeInterval = 0.1
     
     private var cellViews = [UIView]()
     private var preTouchDeg: Double? = nil
@@ -26,19 +46,23 @@ class DialView: UIView {
             return self._rotationOffset
         }
         set {
-            self._rotationOffset = CGFloat(DialView.normalizeDegree(Double(newValue)))
+            self._rotationOffset = CGFloat(Util.normalizeDegree(Double(newValue)))
         }
     }
     
     var activeCellIndex: Int {
         let cellViewsCount = cellViews.count
-        let iDouble = -(Double(rotationOffset) - M_PI / 2) * Double(cellViewsCount) / 2 / M_PI
+        let iDouble = -(Double(rotationOffset) - M_PI_2) * Double(cellViewsCount) / 2 / M_PI
         let i = Int(round(iDouble))
         return i >= 0 ? i : i + cellViewsCount
     }
     
     var cellViewsCount: Int {
         return cellViews.count
+    }
+    
+    var isRotating: Bool {
+        return (velocity > 0)
     }
     
     override var frame: CGRect {
@@ -65,7 +89,18 @@ class DialView: UIView {
     override func touchesMoved(touches: Set<UITouch>, withEvent event: UIEvent?) {
         super.touchesMoved(touches, withEvent: event)
         
-        let touchPos = touches.first!.locationInView(self)
+        updateVelocity(touches.first!)
+    }
+    
+    override func touchesEnded(touches: Set<UITouch>, withEvent event: UIEvent?) {
+        super.touchesEnded(touches, withEvent: event)
+        
+        preTouchDeg = nil
+        startStopping()
+    }
+    
+    private func updateVelocity(touch: UITouch) {
+        let touchPos = touch.locationInView(self)
         let center = CGPoint(x: self.bounds.width / 2, y: self.bounds.height / 2)
         
         let diffX = touchPos.x - center.x
@@ -73,50 +108,25 @@ class DialView: UIView {
         let degTan = -Double(diffY / diffX)
         let deg = atan(diffX == 0 ? Double.infinity : degTan)
         
+        // 差分がわかる
         if let preDeg = preTouchDeg {
             let d = deg - preDeg
-            if abs(d) < (M_PI/2) {
-                velocity = CGFloat(d)
-            } else {
-                velocity = -CGFloat(M_PI - d)
-            }
+            velocity = CGFloat(abs(d) <= M_PI_2 ? d : Util.normalizeDegree(d - M_PI))
+            velocity = Util.restrictedValue(velocity, min: -DialView.MAX_SPEED, max: DialView.MAX_SPEED)
             rotationOffset += velocity
         }
         preTouchDeg = deg
     }
     
-    override func touchesEnded(touches: Set<UITouch>, withEvent event: UIEvent?) {
-        super.touchesEnded(touches, withEvent: event)
-        preTouchDeg = nil
-        if brakeTimer?.valid ?? false {
-            brakeTimer!.invalidate()
-        }
-        brakeTimer = NSTimer.scheduledTimerWithTimeInterval(0.1, target: self, selector: #selector(self.onBrakeTimerUpdated) , userInfo: nil, repeats: true)
-    }
-    
     func onBrakeTimerUpdated() {
-        velocity = max(-1.3, min(1.3, velocity))
-        
-        print(velocity)
         rotationOffset += velocity
 
-        velocity -= velocity > 0 ? 0.03 : -0.03
+        velocity -= (velocity > 0 ? DialView.BRAKE_POWER : -DialView.BRAKE_POWER)
         
-        if abs(velocity) <= 0.03 {
+        if abs(velocity) <= DialView.BRAKE_POWER {
             velocity = 0
             brakeTimer?.invalidate()
         }
-    }
-    
-    static func normalizeDegree(deg: Double) -> Double {
-        var tmp = deg
-        while tmp > M_PI {
-            tmp -= 2*M_PI
-        }
-        while tmp < -M_PI {
-            tmp += 2*M_PI
-        }
-        return tmp
     }
     
     private func reLayoutCellViews(duration: Double) {
@@ -144,9 +154,17 @@ class DialView: UIView {
         }
     }
     
-    func rotationOffsetAtIndex(index: Int) -> Double {
+    // 停止を開始
+    func startStopping() {
+        if let timer = brakeTimer where timer.valid {
+            timer.invalidate()
+        }
+        brakeTimer = NSTimer.scheduledTimerWithTimeInterval(DialView.BRAKE_TIMER_INTERVAL, target: self, selector: #selector(self.onBrakeTimerUpdated) , userInfo: nil, repeats: true)
+    }
+    
+    private func rotationOffsetAtIndex(index: Int) -> Double {
         let cellViewsCount = cellViews.count
-        return -2 * M_PI * Double(index % cellViewsCount) / Double(cellViewsCount) + M_PI / 2
+        return -2 * M_PI * Double(index % cellViewsCount) / Double(cellViewsCount) + M_PI_2
     }
     
     func scrollTo(index: Int) {
